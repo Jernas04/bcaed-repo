@@ -1,0 +1,28 @@
+<svg width="120" height="120" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="vidGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect width="120" height="120" fill="white" rx="12"/>
+  <rect x="15" y="30" width="90" height="60" fill="none" stroke="url(#vidGrad)" stroke-width="3" rx="6"/>
+  <polygon points="50,50 50,70 75,60" fill="url(#vidGrad)"/>
+  <!-- Film strip holes -->
+  <rect x="20" y="18" width="4" height="6" fill="#ccc" rx="1"/>
+  <rect x="30" y="18" width="4" height="6" fill="#ccc" rx="1"/>
+  <rect x="40" y="18" width="4" height="6" fill="#ccc" rx="1"/>
+  <rect x="50" y="18" width="4" height="6" fill="#ccc" rx="1"/>
+  <rect x="60" y="18" width="4" height="6" fill="#ccc" rx="1"/>
+  <rect x="70" y="18" width="4" height="6" fill="#ccc" rx="1"/>
+  <rect x="80" y="18" width="4" height="6" fill="#ccc" rx="1"/>
+  <rect x="90" y="18" width="4" height="6" fill="#ccc" rx="1"/>
+  <rect x="20" y="96" width="4" height="6" fill="#ccc" rx="1"/>
+  <rect x="30" y="96" width="4" height="6" fill="#ccc" rx="1"/>
+  <rect x="40" y="96" width="4" height="6" fill="#ccc" rx="1"/>
+  <rect x="50" y="96" width="4" height="6" fill="#ccc" rx="1"/>
+  <rect x="60" y="96" width="4" height="6" fill="#ccc" rx="1"/>
+  <rect x="70" y="96" width="4" height="6" fill="#ccc" rx="1"/>
+  <rect x="80" y="96" width="4" height="6" fill="#ccc" rx="1"/>
+  <rect x="90" y="96" width="4" height="6" fill="#ccc" rx="1"/>
+</svg>
