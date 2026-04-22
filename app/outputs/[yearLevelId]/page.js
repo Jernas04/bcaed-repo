@@ -63,12 +63,25 @@ const TABS = [
     accept: 'audio/*', hint: 'MP3, WAV, AAC, OGG' },
 ]
 
+// ── Responsive hook ────────────────────────────────────────────────────────────
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
+  return isMobile
+}
+
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function OutputsPage() {
   const params  = useParams()
   const router  = useRouter()
   const yearId  = params.yearLevelId
   const fileRef = useRef(null)
+  const isMobile = useIsMobile()
 
   const [currentUser,     setCurrentUser]     = useState(null)
   const [activeTab,       setActiveTab]        = useState('images')
@@ -85,122 +98,56 @@ export default function OutputsPage() {
   const [uploadError,     setUploadError]      = useState(null)
   const [uploadSuccess,   setUploadSuccess]    = useState(false)
   const [dragOver,        setDragOver]         = useState(false)
+  // Mobile detail view tab: 'media' | 'comments'
+  const [detailTab,       setDetailTab]        = useState('media')
 
   const currentTab = TABS.find(t => t.key === activeTab)
   const isTeacher  = currentUser?.profile?.role === 'teacher'
   const isStudent  = currentUser?.profile?.role === 'student'
 
-  // ── Auth ──────────────────────────────────────────────────────────────────────
   useEffect(() => { checkUser() }, [])
   useEffect(() => { if (currentUser) fetchContents() }, [currentUser, activeTab])
-  useEffect(() => { if (selectedContent) fetchComments(selectedContent.id) }, [selectedContent])
+  useEffect(() => { if (selectedContent) { fetchComments(selectedContent.id); setDetailTab('media') } }, [selectedContent])
 
   const checkUser = async () => {
-  const { data: { user }, error } = await supabase.auth.getUser()
-  if (error || !user) { router.push('/login'); return }
-  
-  const { data: profile, error: profileError } = await supabase
-    .from('users')
-    .select('*')
-    .eq('id', user.id)
-    .single()
-  
-  console.log('Auth user ID:', user.id)
-  console.log('Profile found:', profile)
-  console.log('Profile error:', profileError)
-  
-  setCurrentUser({ ...user, profile })
-}
-
-  // ── Data fetching ─────────────────────────────────────────────────────────────
-  const fetchContents = async () => {
-  setLoading(true)
-
-  const { data, error } = await supabase
-    .from('contents')
-    .select('*')
-    .eq('year_id', yearId)
-    .eq('type', currentTab?.type)
-    .order('created_at', { ascending: false })
-
-  if (error) {
-    console.error(error)
-    setContents([])
-    setLoading(false)
-    return
+    const { data: { user }, error } = await supabase.auth.getUser()
+    if (error || !user) { router.push('/login'); return }
+    const { data: profile } = await supabase.from('users').select('*').eq('id', user.id).single()
+    setCurrentUser({ ...user, profile })
   }
 
-  const contentsWithDetails = await Promise.all((data || []).map(async (content) => {
-    const { data: userData } = await supabase
-      .from('users')
-      .select('name, role')
-      .eq('id', content.user_id)
-      .single()
-
-    const { data: yearData } = await supabase
-      .from('years')
-      .select('year_level, academic_year_id')
-      .eq('id', content.year_id)
-      .single()
-
-    let academicYearName = ''
-    if (yearData?.academic_year_id) {
-      const { data: ayData } = await supabase
-        .from('academic_years')
-        .select('name')
-        .eq('id', yearData.academic_year_id)
-        .single()
-      academicYearName = ayData?.name || ''
-    }
-
-    return {
-      ...content,
-      uploader: userData || { name: 'Unknown', role: '' },
-      year: {
-        year_level: yearData?.year_level || '',
-        academic_year: academicYearName
+  const fetchContents = async () => {
+    setLoading(true)
+    const { data, error } = await supabase
+      .from('contents').select('*')
+      .eq('year_id', yearId).eq('type', currentTab?.type)
+      .order('created_at', { ascending: false })
+    if (error) { setContents([]); setLoading(false); return }
+    const contentsWithDetails = await Promise.all((data || []).map(async (content) => {
+      const { data: userData } = await supabase.from('users').select('name, role').eq('id', content.user_id).single()
+      const { data: yearData } = await supabase.from('years').select('year_level, academic_year_id').eq('id', content.year_id).single()
+      let academicYearName = ''
+      if (yearData?.academic_year_id) {
+        const { data: ayData } = await supabase.from('academic_years').select('name').eq('id', yearData.academic_year_id).single()
+        academicYearName = ayData?.name || ''
       }
-    }
-  }))
-
-  setContents(contentsWithDetails)
-  setLoading(false)
-}
+      return { ...content, uploader: userData || { name: 'Unknown', role: '' }, year: { year_level: yearData?.year_level || '', academic_year: academicYearName } }
+    }))
+    setContents(contentsWithDetails)
+    setLoading(false)
+  }
 
   const fetchComments = async (contentId) => {
-  if (!contentId) return
-
-  const { data, error } = await supabase
-    .from('comments')
-    .select('*')
-    .eq('output_id', contentId)
-    .order('created_at', { ascending: true })
-
-  if (error) {
-    console.error(error)
-    setComments([])
-    return
+    if (!contentId) return
+    const { data, error } = await supabase.from('comments').select('*').eq('output_id', contentId).order('created_at', { ascending: true })
+    if (error) { setComments([]); return }
+    const commentsWithUsers = await Promise.all((data || []).map(async (comment) => {
+      const { data: userData } = await supabase.from('users').select('name, role').eq('id', comment.user_id).single()
+      return { ...comment, commenter: userData || { name: 'Unknown', role: '' } }
+    }))
+    setComments(commentsWithUsers)
   }
 
-  const commentsWithUsers = await Promise.all((data || []).map(async (comment) => {
-    const { data: userData } = await supabase
-      .from('users')
-      .select('name, role')
-      .eq('id', comment.user_id)
-      .single()
-
-    return {
-      ...comment,
-      commenter: userData || { name: 'Unknown', role: '' }
-    }
-  }))
-
-  setComments(commentsWithUsers)
-}
-
-
-
-  // ── Upload ─────────────────────────────────────────────────────────────────────
   const handleUpload = async () => {
     if (!file || !title.trim()) { setUploadError('Please enter a title and select a file'); return }
     setUploading(true); setUploadError(null)
@@ -221,31 +168,20 @@ export default function OutputsPage() {
     setUploading(false)
   }
 
-  // ── Comment ───────────────────────────────────────────────────────────────────
   const handleComment = async () => {
-  if (!newComment.trim() || !selectedContent?.id) return
-
-  setCommentLoading(true)
-
-  const { error } = await supabase.from('comments').insert([{
-    output_id: selectedContent.id, // ✅ FIXED
-    user_id: currentUser.id,
-    comment_text: newComment.trim()
-  }])
-
-  setCommentLoading(false)
-
-  if (error) {
-    console.error(error)
-    return
+    if (!newComment.trim() || !selectedContent?.id) return
+    setCommentLoading(true)
+    const { error } = await supabase.from('comments').insert([{
+      output_id: selectedContent.id,
+      user_id: currentUser.id,
+      comment_text: newComment.trim()
+    }])
+    setCommentLoading(false)
+    if (error) { console.error(error); return }
+    setNewComment('')
+    fetchComments(selectedContent.id)
   }
 
-  setNewComment('')
-  fetchComments(selectedContent.id)
-}
-
-
-  // ── Drag & Drop ───────────────────────────────────────────────────────────────
   const handleDrop = (e) => {
     e.preventDefault(); setDragOver(false)
     const dropped = e.dataTransfer.files[0]
@@ -264,46 +200,69 @@ export default function OutputsPage() {
       background: 'rgba(255,255,255,0.05)',
       backdropFilter: 'blur(20px)',
       borderBottom: '1px solid rgba(255,255,255,0.1)',
-      padding: '1rem 2rem',
+      padding: isMobile ? '0.75rem 1rem' : '1rem 2rem',
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      position: 'sticky', top: 0, zIndex: 50
+      position: 'sticky', top: 0, zIndex: 50,
+      gap: '0.5rem'
     },
-    headerLeft: { display: 'flex', alignItems: 'center', gap: '1rem' },
+    headerLeft: { display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0, flex: 1 },
     backBtn: {
-      display: 'flex', alignItems: 'center', gap: '0.4rem',
-      padding: '0.5rem 1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.2)',
+      display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0,
+      padding: isMobile ? '0.5rem 0.65rem' : '0.5rem 1rem',
+      borderRadius: '8px', border: '1px solid rgba(255,255,255,0.2)',
       background: 'rgba(255,255,255,0.1)', color: 'white', cursor: 'pointer',
       fontSize: '13px', fontWeight: '600', fontFamily: 'inherit', transition: 'all 0.2s'
     },
-    headerTitle: { color: 'white', fontSize: '18px', fontWeight: '700', margin: 0 },
+    headerTitle: {
+      color: 'white',
+      fontSize: isMobile ? '14px' : '18px',
+      fontWeight: '700', margin: 0,
+      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+    },
     userBadge: {
-      display: 'flex', alignItems: 'center', gap: '0.5rem',
+      display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0,
       background: isTeacher ? 'rgba(251,191,36,0.2)' : 'rgba(99,102,241,0.2)',
       border: `1px solid ${isTeacher ? 'rgba(251,191,36,0.4)' : 'rgba(99,102,241,0.4)'}`,
-      borderRadius: '20px', padding: '0.35rem 0.85rem',
-      color: isTeacher ? '#fbbf24' : '#a5b4fc', fontSize: '12px', fontWeight: '600'
+      borderRadius: '20px', padding: isMobile ? '0.3rem 0.55rem' : '0.35rem 0.85rem',
+      color: isTeacher ? '#fbbf24' : '#a5b4fc',
+      fontSize: isMobile ? '11px' : '12px', fontWeight: '600',
+      maxWidth: isMobile ? '120px' : 'none',
+      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
     },
-    main: { flex: 1, padding: '1.5rem 2rem', maxWidth: '1200px', margin: '0 auto', width: '100%', boxSizing: 'border-box' },
+    main: {
+      flex: 1,
+      padding: isMobile ? '1rem' : '1.5rem 2rem',
+      maxWidth: '1200px', margin: '0 auto', width: '100%', boxSizing: 'border-box'
+    },
     tabBar: {
-      display: 'flex', gap: '0.4rem', marginBottom: '1.5rem',
-      background: 'rgba(255,255,255,0.05)', padding: '0.35rem', borderRadius: '12px',
+      display: 'flex', gap: '0.3rem', marginBottom: '1.25rem',
+      background: 'rgba(255,255,255,0.05)', padding: '0.3rem', borderRadius: '12px',
       border: '1px solid rgba(255,255,255,0.1)'
     },
     tabActive: {
-      flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem',
-      padding: '0.6rem 0.5rem', borderRadius: '8px', border: 'none', cursor: 'pointer',
-      background: 'white', color: '#312e81', fontWeight: '700', fontSize: '13px',
-      fontFamily: 'inherit', boxShadow: '0 2px 8px rgba(0,0,0,0.15)', transition: 'all 0.2s'
+      flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      gap: isMobile ? '0' : '0.4rem',
+      padding: isMobile ? '0.6rem 0.25rem' : '0.6rem 0.5rem',
+      borderRadius: '8px', border: 'none', cursor: 'pointer',
+      background: 'white', color: '#312e81', fontWeight: '700',
+      fontSize: isMobile ? '11px' : '13px',
+      fontFamily: 'inherit', boxShadow: '0 2px 8px rgba(0,0,0,0.15)', transition: 'all 0.2s',
+      flexDirection: 'column'
     },
     tabInactive: {
-      flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem',
-      padding: '0.6rem 0.5rem', borderRadius: '8px', border: 'none', cursor: 'pointer',
-      background: 'transparent', color: 'rgba(255,255,255,0.6)', fontWeight: '500', fontSize: '13px',
-      fontFamily: 'inherit', transition: 'all 0.2s'
+      flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      gap: isMobile ? '0' : '0.4rem',
+      padding: isMobile ? '0.6rem 0.25rem' : '0.6rem 0.5rem',
+      borderRadius: '8px', border: 'none', cursor: 'pointer',
+      background: 'transparent', color: 'rgba(255,255,255,0.6)', fontWeight: '500',
+      fontSize: isMobile ? '11px' : '13px',
+      fontFamily: 'inherit', transition: 'all 0.2s',
+      flexDirection: 'column'
     },
     uploadCard: {
-      background: 'rgba(255,255,255,0.95)', borderRadius: '16px', padding: '1.5rem',
-      marginBottom: '1.5rem', boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
+      background: 'rgba(255,255,255,0.95)', borderRadius: '16px',
+      padding: isMobile ? '1rem' : '1.5rem',
+      marginBottom: '1.25rem', boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
     },
     uploadTitle: { margin: '0 0 1rem', color: '#1e1b4b', fontSize: '15px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '0.5rem' },
     input: {
@@ -318,7 +277,7 @@ export default function OutputsPage() {
     },
     dropZone: (active) => ({
       border: `2px dashed ${active ? '#6366f1' : '#c4b5fd'}`,
-      borderRadius: '10px', padding: '1.5rem',
+      borderRadius: '10px', padding: '1.25rem',
       background: active ? 'rgba(99,102,241,0.05)' : '#fafafa',
       textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s'
     }),
@@ -329,7 +288,13 @@ export default function OutputsPage() {
       cursor: disabled ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center',
       justifyContent: 'center', gap: '0.5rem', transition: 'all 0.2s'
     }),
-    grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '1.25rem' },
+    grid: {
+      display: 'grid',
+      gridTemplateColumns: isMobile
+        ? 'repeat(auto-fill, minmax(150px, 1fr))'
+        : 'repeat(auto-fill, minmax(260px, 1fr))',
+      gap: isMobile ? '0.85rem' : '1.25rem'
+    },
     card: {
       background: 'rgba(255,255,255,0.97)', borderRadius: '14px', overflow: 'hidden',
       cursor: 'pointer', boxShadow: '0 4px 16px rgba(0,0,0,0.15)', transition: 'all 0.25s',
@@ -346,51 +311,32 @@ export default function OutputsPage() {
     }
   }
 
-  // ── Render: Detail view ───────────────────────────────────────────────────────
+  // ── Detail view ───────────────────────────────────────────────────────────────
   if (selectedContent) {
     const uploaderName = selectedContent.uploader?.name || 'Unknown'
     const uploaderRole = selectedContent.uploader?.role || ''
     const academicYear = selectedContent.year?.academic_year || ''
-    const yearLevel = selectedContent.year?.year_level || ''
+    const yearLevel    = selectedContent.year?.year_level || ''
 
-    return (
-      <div style={S.page}>
-        {/* Header */}
-        <header style={S.header}>
-          <div style={S.headerLeft}>
-            <button style={S.backBtn} onClick={() => setSelectedContent(null)}>
-              <ArrowLeftIcon /> Back
-            </button>
-            <span style={S.headerTitle}>
-              {currentTab?.Icon && <currentTab.Icon />} {selectedContent.title}
-            </span>
-          </div>
-          <div style={S.userBadge}>
-            {isTeacher ? '👩‍🏫' : '👨‍🎓'} {currentUser?.profile?.name}
-          </div>
-        </header>
-
-        <div style={{ ...S.main, display: 'grid', gridTemplateColumns: '1fr 380px', gap: '1.5rem', alignItems: 'start' }}>
-          {/* Left: Media */}
+    // Mobile detail: tab switcher between media and comments
+    const detailContent = (
+      <>
+        {/* Media panel */}
+        {(!isMobile || detailTab === 'media') && (
           <div style={{ background: 'rgba(255,255,255,0.97)', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
-            {/* Media Preview */}
-            <div style={{ background: '#0f0f23', minHeight: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ background: '#0f0f23', minHeight: isMobile ? '200px' : '300px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               {selectedContent.type === 'image' && (
-                <img src={selectedContent.file_url} style={{ maxWidth: '100%', maxHeight: '500px', objectFit: 'contain' }} alt={selectedContent.title} />
+                <img src={selectedContent.file_url} style={{ maxWidth: '100%', maxHeight: isMobile ? '280px' : '500px', objectFit: 'contain' }} alt={selectedContent.title} />
               )}
               {selectedContent.type === 'video' && (
-                <video controls style={{ width: '100%', maxHeight: '500px' }}>
+                <video controls style={{ width: '100%', maxHeight: isMobile ? '280px' : '500px' }}>
                   <source src={selectedContent.file_url} />
                 </video>
               )}
               {selectedContent.type === 'audio' && (
                 <div style={{ padding: '2rem', width: '100%' }}>
-                  <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
-                    <span style={{ fontSize: '4rem' }}>🎵</span>
-                  </div>
-                  <audio controls style={{ width: '100%' }}>
-                    <source src={selectedContent.file_url} />
-                  </audio>
+                  <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}><span style={{ fontSize: '4rem' }}>🎵</span></div>
+                  <audio controls style={{ width: '100%' }}><source src={selectedContent.file_url} /></audio>
                 </div>
               )}
               {selectedContent.type === 'file' && (
@@ -403,43 +349,32 @@ export default function OutputsPage() {
                 </div>
               )}
             </div>
-            {/* Info */}
-            <div style={{ padding: '1.25rem' }}>
-              <h2 style={{ margin: '0 0 0.4rem', color: '#1e1b4b', fontSize: '18px' }}>{selectedContent.title}</h2>
+            <div style={{ padding: isMobile ? '0.85rem' : '1.25rem' }}>
+              <h2 style={{ margin: '0 0 0.4rem', color: '#1e1b4b', fontSize: isMobile ? '15px' : '18px' }}>{selectedContent.title}</h2>
               {selectedContent.description && <p style={{ margin: '0 0 0.75rem', color: '#6b7280', fontSize: '14px', lineHeight: '1.5' }}>{selectedContent.description}</p>}
               <p style={{ margin: 0, color: '#9ca3af', fontSize: '12px', lineHeight: '1.6' }}>
-                Uploaded by <strong style={{ color: '#6366f1' }}>
-                  {uploaderName} ({uploaderRole})
-                </strong>
-                <br />
-                {(academicYear || yearLevel) && (
-  <>
-                    {academicYear ? `${academicYear} · ` : ''}{yearLevel}
-                    <br />
-                  </>
-                )}
+                Uploaded by <strong style={{ color: '#6366f1' }}>{uploaderName} ({uploaderRole})</strong><br />
+                {(academicYear || yearLevel) && <>{academicYear ? `${academicYear} · ` : ''}{yearLevel}<br /></>}
                 {new Date(selectedContent.created_at).toLocaleString()}
               </p>
             </div>
           </div>
+        )}
 
-          {/* Right: Comments */}
-          <div style={{ background: 'rgba(255,255,255,0.97)', borderRadius: '16px', boxShadow: '0 8px 32px rgba(0,0,0,0.2)', display: 'flex', flexDirection: 'column', maxHeight: '80vh' }}>
+        {/* Comments panel */}
+        {(!isMobile || detailTab === 'comments') && (
+          <div style={{ background: 'rgba(255,255,255,0.97)', borderRadius: '16px', boxShadow: '0 8px 32px rgba(0,0,0,0.2)', display: 'flex', flexDirection: 'column', maxHeight: isMobile ? 'none' : '80vh' }}>
             <div style={{ padding: '1.25rem 1.25rem 0.75rem', borderBottom: '1px solid #f3f4f6' }}>
               <h3 style={{ margin: 0, color: '#1e1b4b', fontSize: '15px', fontWeight: '700' }}>
                 💬 Comments <span style={{ color: '#9ca3af', fontWeight: '400' }}>({comments.length})</span>
               </h3>
             </div>
-
-            {/* Teacher banner */}
             {isTeacher && (
               <div style={{ margin: '0.75rem 1.25rem 0', padding: '0.6rem 0.9rem', background: 'linear-gradient(135deg,#fef9c3,#fef3c7)', borderRadius: '8px', fontSize: '12px', color: '#92400e', fontWeight: '600', border: '1px solid #fde68a' }}>
                 ✏️ You are providing feedback as a <strong>Teacher</strong>
               </div>
             )}
-
-            {/* Comments list */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '0.75rem 1.25rem' }}>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '0.75rem 1.25rem', maxHeight: isMobile ? '300px' : 'none' }}>
               {comments.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '2rem 0', color: '#9ca3af' }}>
                   <p style={{ fontSize: '2rem', margin: '0 0 0.5rem' }}>💭</p>
@@ -450,11 +385,7 @@ export default function OutputsPage() {
                 const name = c.commenter?.name || c.users?.name || 'Unknown'
                 const isT = role === 'teacher'
                 return (
-                  <div key={c.id} style={{
-                    padding: '0.75rem', marginBottom: '0.75rem', borderRadius: '10px',
-                    background: isT ? '#fffbeb' : '#f8faff',
-                    borderLeft: `3px solid ${isT ? '#f59e0b' : '#6366f1'}`
-                  }}>
+                  <div key={c.id} style={{ padding: '0.75rem', marginBottom: '0.75rem', borderRadius: '10px', background: isT ? '#fffbeb' : '#f8faff', borderLeft: `3px solid ${isT ? '#f59e0b' : '#6366f1'}` }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
                       <span style={{ fontWeight: '700', color: '#1f2937', fontSize: '12px' }}>
                         {name}
@@ -467,14 +398,12 @@ export default function OutputsPage() {
                 )
               })}
             </div>
-
-            {/* Comment input */}
             <div style={{ padding: '0.75rem 1.25rem 1.25rem', borderTop: '1px solid #f3f4f6' }}>
               <textarea
                 value={newComment}
                 onChange={e => setNewComment(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && e.ctrlKey) handleComment() }}
-                placeholder={isTeacher ? 'Write your feedback...' : 'Add a comment... (Ctrl+Enter to send)'}
+                placeholder={isTeacher ? 'Write your feedback...' : 'Add a comment...'}
                 style={{ ...S.textarea, minHeight: '70px', marginBottom: '0.5rem' }}
               />
               <button onClick={handleComment} disabled={!newComment.trim() || commentLoading}
@@ -483,6 +412,49 @@ export default function OutputsPage() {
               </button>
             </div>
           </div>
+        )}
+      </>
+    )
+
+    return (
+      <div style={S.page}>
+        <header style={S.header}>
+          <div style={S.headerLeft}>
+            <button style={S.backBtn} onClick={() => setSelectedContent(null)}>
+              <ArrowLeftIcon /> {isMobile ? '' : 'Back'}
+            </button>
+            <span style={S.headerTitle}>{selectedContent.title}</span>
+          </div>
+          <div style={S.userBadge}>
+            {isTeacher ? '👩‍🏫' : '👨‍🎓'} {currentUser?.profile?.name}
+          </div>
+        </header>
+
+        {/* Mobile tab switcher */}
+        {isMobile && (
+          <div style={{ display: 'flex', background: 'rgba(255,255,255,0.08)', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+            {['media', 'comments'].map(tab => (
+              <button key={tab} onClick={() => setDetailTab(tab)} style={{
+                flex: 1, padding: '0.65rem', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+                fontWeight: '700', fontSize: '13px', transition: 'all 0.2s',
+                background: detailTab === tab ? 'rgba(255,255,255,0.15)' : 'transparent',
+                color: detailTab === tab ? 'white' : 'rgba(255,255,255,0.5)',
+                borderBottom: detailTab === tab ? '2px solid white' : '2px solid transparent'
+              }}>
+                {tab === 'media' ? '🖼 Media' : `💬 Comments (${comments.length})`}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div style={{
+          ...S.main,
+          display: isMobile ? 'flex' : 'grid',
+          flexDirection: 'column',
+          gridTemplateColumns: isMobile ? undefined : '1fr 380px',
+          gap: '1.5rem', alignItems: 'start'
+        }}>
+          {detailContent}
         </div>
 
         <footer style={S.footer}>© 2026 BCAEd Digital Repository · Colegio de la Ciudad de Tayabas</footer>
@@ -490,14 +462,13 @@ export default function OutputsPage() {
     )
   }
 
-  // ── Render: List view ─────────────────────────────────────────────────────────
+  // ── List view ─────────────────────────────────────────────────────────────────
   return (
     <div style={S.page}>
-      {/* Header */}
       <header style={S.header}>
         <div style={S.headerLeft}>
           <button style={S.backBtn} onClick={() => router.push('/dashboard')}>
-            <ArrowLeftIcon /> Dashboard
+            <ArrowLeftIcon /> {isMobile ? '' : 'Dashboard'}
           </button>
           <h1 style={S.headerTitle}>📤 Student Outputs</h1>
         </div>
@@ -512,16 +483,16 @@ export default function OutputsPage() {
           {TABS.map(tab => (
             <button key={tab.key} onClick={() => setActiveTab(tab.key)}
               style={activeTab === tab.key ? S.tabActive : S.tabInactive}>
-              <tab.Icon /> {tab.label}
+              <tab.Icon />
+              <span style={{ marginTop: isMobile ? '2px' : '0' }}>{tab.label}</span>
             </button>
           ))}
         </div>
 
-        {/* Upload Section — All logged in users */}
+        {/* Upload Section */}
         {currentUser && (
           <div style={S.uploadCard}>
             <h3 style={S.uploadTitle}><UploadIcon /> Upload {currentTab?.label}</h3>
-
             {uploadSuccess && (
               <div style={{ padding: '0.7rem 1rem', background: '#ecfdf5', color: '#065f46', borderRadius: '8px', marginBottom: '0.75rem', fontWeight: '600', fontSize: '13px', border: '1px solid #a7f3d0' }}>
                 ✓ Uploaded successfully!
@@ -532,59 +503,42 @@ export default function OutputsPage() {
                 ⚠ {uploadError}
               </div>
             )}
-
             <div style={{ display: 'grid', gap: '0.65rem' }}>
-              <input
-                placeholder={`Title *`} value={title}
-                onChange={e => setTitle(e.target.value)} style={S.input}
-                onFocus={e => e.target.style.borderColor = '#6366f1'}
-                onBlur={e => e.target.style.borderColor = '#e5e7eb'}
-              />
-              <textarea
-                placeholder="Description (optional)" value={description}
-                onChange={e => setDescription(e.target.value)} style={S.textarea}
-                onFocus={e => e.target.style.borderColor = '#6366f1'}
-                onBlur={e => e.target.style.borderColor = '#e5e7eb'}
-              />
-
-              {/* Drop zone */}
-              <div
-                style={S.dropZone(dragOver)}
+              <input placeholder="Title *" value={title} onChange={e => setTitle(e.target.value)} style={S.input}
+                onFocus={e => e.target.style.borderColor = '#6366f1'} onBlur={e => e.target.style.borderColor = '#e5e7eb'} />
+              <textarea placeholder="Description (optional)" value={description} onChange={e => setDescription(e.target.value)} style={S.textarea}
+                onFocus={e => e.target.style.borderColor = '#6366f1'} onBlur={e => e.target.style.borderColor = '#e5e7eb'} />
+              <div style={S.dropZone(dragOver)}
                 onDragOver={e => { e.preventDefault(); setDragOver(true) }}
                 onDragLeave={() => setDragOver(false)}
                 onDrop={handleDrop}
-                onClick={() => fileRef.current?.click()}
-              >
-                <input ref={fileRef} type="file" accept={currentTab?.accept}
-                  style={{ display: 'none' }} onChange={e => setFile(e.target.files[0])} />
+                onClick={() => fileRef.current?.click()}>
+                <input ref={fileRef} type="file" accept={currentTab?.accept} style={{ display: 'none' }} onChange={e => setFile(e.target.files[0])} />
                 {file ? (
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                     <span style={{ color: '#6366f1', fontSize: '1.2rem' }}>✓</span>
-                    <span style={{ color: '#374151', fontWeight: '600', fontSize: '13px' }}>{file.name}</span>
-                    <button onClick={e => { e.stopPropagation(); setFile(null) }}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', padding: '0 0.2rem' }}>
+                    <span style={{ color: '#374151', fontWeight: '600', fontSize: '13px', wordBreak: 'break-all' }}>{file.name}</span>
+                    <button onClick={e => { e.stopPropagation(); setFile(null) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', padding: '0 0.2rem' }}>
                       <XIcon />
                     </button>
                   </div>
                 ) : (
                   <>
                     <p style={{ margin: '0 0 0.25rem', color: '#6366f1', fontWeight: '600', fontSize: '14px' }}>
-                      Drop {currentTab?.label.toLowerCase()} here or click to browse
+                      {isMobile ? 'Tap to browse' : `Drop ${currentTab?.label.toLowerCase()} here or click to browse`}
                     </p>
                     <p style={{ margin: 0, color: '#9ca3af', fontSize: '12px' }}>{currentTab?.hint} · Max 100MB</p>
                   </>
                 )}
               </div>
-
-              <button onClick={handleUpload} disabled={uploading || !title.trim() || !file}
-                style={S.uploadBtn(uploading || !title.trim() || !file)}>
+              <button onClick={handleUpload} disabled={uploading || !title.trim() || !file} style={S.uploadBtn(uploading || !title.trim() || !file)}>
                 <UploadIcon /> {uploading ? 'Uploading...' : `Upload ${currentTab?.label}`}
               </button>
             </div>
           </div>
         )}
 
-        {/* Teacher info banner */}
+        {/* Teacher banner */}
         {isTeacher && (
           <div style={{ background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.3)', borderRadius: '10px', padding: '0.75rem 1rem', marginBottom: '1.25rem', color: '#fbbf24', fontSize: '13px', fontWeight: '500' }}>
             👩‍🏫 Click on any output to view and leave feedback
@@ -600,82 +554,50 @@ export default function OutputsPage() {
         ) : contents.length === 0 ? (
           <div style={S.emptyBox}>
             <p style={{ fontSize: '3rem', margin: '0 0 0.75rem' }}>📭</p>
-            <p style={{ color: 'rgba(255,255,255,0.6)', margin: '0 0 0.3rem', fontWeight: '600' }}>
-              No {currentTab?.label.toLowerCase()} uploaded yet
-            </p>
+            <p style={{ color: 'rgba(255,255,255,0.6)', margin: '0 0 0.3rem', fontWeight: '600' }}>No {currentTab?.label.toLowerCase()} uploaded yet</p>
             {isStudent && <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: '13px', margin: 0 }}>Be the first to upload above!</p>}
           </div>
         ) : (
           <div style={S.grid}>
             {contents.map(content => {
-                const uploaderName = content.uploader?.name || 'Unknown'
-                const uploaderRole = content.uploader?.role || ''
-                const academicYear = content.year?.academic_year || ''
-                const yearLevel = content.year?.year_level || ''
-
+              const uploaderName = content.uploader?.name || 'Unknown'
+              const uploaderRole = content.uploader?.role || ''
+              const academicYear = content.year?.academic_year || ''
+              const yearLevel = content.year?.year_level || ''
               return (
                 <div key={content.id} style={S.card}
                   onClick={() => setSelectedContent(content)}
                   onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 16px 40px rgba(0,0,0,0.25)' }}
                   onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.15)' }}>
-
-                  {/* Thumbnail */}
-                  <div style={{ aspectRatio: '16/9', background: '#1e1b4b', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative' }}>
-                    {content.type === 'image' && (
-                      <img src={content.file_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt={content.title} />
-                    )}
-                    {content.type === 'video' && (
-                      <div style={{ textAlign: 'center' }}>
-                        <span style={{ fontSize: '3rem', display: 'block' }}>🎬</span>
-                        <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px' }}>Video</span>
-                      </div>
-                    )}
-                    {content.type === 'audio' && (
-                      <div style={{ textAlign: 'center' }}>
-                        <span style={{ fontSize: '3rem', display: 'block' }}>🎵</span>
-                        <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px' }}>Audio</span>
-                      </div>
-                    )}
-                    {content.type === 'file' && (
-                      <div style={{ textAlign: 'center' }}>
-                        <span style={{ fontSize: '3rem', display: 'block' }}>📄</span>
-                        <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px' }}>Document</span>
-                      </div>
-                    )}
-                    {/* Hover overlay */}
-                    <div style={{ position: 'absolute', inset: 0, background: 'rgba(99,102,241,0)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
-                      className="card-overlay">
-                    </div>
+                  <div style={{ aspectRatio: '16/9', background: '#1e1b4b', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                    {content.type === 'image' && <img src={content.file_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt={content.title} />}
+                    {content.type === 'video' && <div style={{ textAlign: 'center' }}><span style={{ fontSize: '2.5rem', display: 'block' }}>🎬</span><span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px' }}>Video</span></div>}
+                    {content.type === 'audio' && <div style={{ textAlign: 'center' }}><span style={{ fontSize: '2.5rem', display: 'block' }}>🎵</span><span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px' }}>Audio</span></div>}
+                    {content.type === 'file'  && <div style={{ textAlign: 'center' }}><span style={{ fontSize: '2.5rem', display: 'block' }}>📄</span><span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px' }}>Document</span></div>}
                   </div>
-
-                  {/* Card info */}
-                  <div style={{ padding: '0.9rem' }}>
-                    <h3 style={{ margin: '0 0 0.3rem', color: '#1e1b4b', fontSize: '14px', fontWeight: '700', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <div style={{ padding: isMobile ? '0.65rem' : '0.9rem' }}>
+                    <h3 style={{ margin: '0 0 0.3rem', color: '#1e1b4b', fontSize: isMobile ? '12px' : '14px', fontWeight: '700', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {content.title}
                     </h3>
-                    {content.description && (
+                    {!isMobile && content.description && (
                       <p style={{ margin: '0 0 0.4rem', color: '#6b7280', fontSize: '12px', lineHeight: '1.4', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                         {content.description}
                       </p>
                     )}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <span style={{ color: '#6366f1', fontSize: '11px', fontWeight: '600' }}>
-                        by {uploaderName} ({uploaderRole})
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <span style={{ color: '#6366f1', fontSize: '11px', fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        by {uploaderName}
                       </span>
-
-                      {(academicYear || yearLevel) && (
-                      <span style={{ color: '#6b7280', fontSize: '11px' }}>
-                        {academicYear ? `${academicYear} · ` : ''}{yearLevel}
-                      </span>
+                      {!isMobile && (academicYear || yearLevel) && (
+                        <span style={{ color: '#6b7280', fontSize: '11px' }}>{academicYear ? `${academicYear} · ` : ''}{yearLevel}</span>
+                      )}
+                      <span style={{ color: '#9ca3af', fontSize: '11px' }}>{new Date(content.created_at).toLocaleDateString()}</span>
+                    </div>
+                    {!isMobile && (
+                      <div style={{ marginTop: '0.6rem', padding: '0.35rem 0.6rem', background: '#f5f3ff', borderRadius: '6px', fontSize: '11px', color: '#6366f1', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                        💬 Click to view & comment
+                      </div>
                     )}
-
-                      <span style={{ color: '#9ca3af', fontSize: '11px' }}>
-                        {new Date(content.created_at).toLocaleDateString()}
-                      </span>
-                    </div>
-                    <div style={{ marginTop: '0.6rem', padding: '0.35rem 0.6rem', background: '#f5f3ff', borderRadius: '6px', fontSize: '11px', color: '#6366f1', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
-                      💬 Click to view & comment
-                    </div>
                   </div>
                 </div>
               )
