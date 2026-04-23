@@ -75,7 +75,7 @@ export default function LoginPage() {
       if (isSignUp) {
         result = await signUp(formData.email, formData.password, formData.name, formData.role)
         if (result.success) {
-          setSuccess(`✓ Account created! Welcome, ${formData.name}!`)
+          setSuccess('Account created! Please check your email to confirm your account.')
           setFormData({ email: '', password: '', name: '', role: 'student' })
           setTimeout(() => { setIsSignUp(false); setSuccess('') }, 3000)
         } else {
