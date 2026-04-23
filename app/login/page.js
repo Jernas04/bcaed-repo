@@ -55,7 +55,7 @@ export default function LoginPage() {
     e.preventDefault()
     setLoading(true)
     setError('')
-    setSuccess(`✓ Account created! Please check your email (${formData.email}) to confirm your account before logging in.`)
+    setSuccess('')
 
     // Validations
     if (isSignUp) {
@@ -75,15 +75,10 @@ export default function LoginPage() {
       if (isSignUp) {
         result = await signUp(formData.email, formData.password, formData.name, formData.role)
         if (result.success) {
-            if (result.requiresConfirmation) {
-              // ✅ Email confirmation needed
-              setSuccess(`✓ Account created! We sent a confirmation link to ${formData.email}. Please check your inbox (and spam folder) before logging in.`)
-            } else {
-              setSuccess(`✓ Account created! Welcome, ${formData.name}!`)
-            }
-            setFormData({ email: '', password: '', name: '', role: 'student' })
-            setTimeout(() => { setIsSignUp(false); setSuccess('') }, 6000) // longer timeout para mabasa
-          } else {
+          setSuccess(`✓ Account created! Welcome, ${formData.name}!`)
+          setFormData({ email: '', password: '', name: '', role: 'student' })
+          setTimeout(() => { setIsSignUp(false); setSuccess('') }, 3000)
+        } else {
           if (result.error?.includes('already registered') || result.error?.includes('already exists')) {
             setError('This email is already registered. Please sign in instead.')
           } else if (result.error?.includes('rate limit')) {
