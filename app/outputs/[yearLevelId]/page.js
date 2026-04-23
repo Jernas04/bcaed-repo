@@ -84,6 +84,11 @@ export default function OutputsPage() {
   const isMobile = useIsMobile()
 
   const [currentUser,     setCurrentUser]     = useState(null)
+  const [editingContentId, setEditingContentId] = useState(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editDescription, setEditDescription] = useState('')
+  const [editingCommentId, setEditingCommentId] = useState(null)
+  const [editCommentText, setEditCommentText] = useState('')
   const [activeTab,       setActiveTab]        = useState('images')
   const [contents,        setContents]         = useState([])
   const [loading,         setLoading]          = useState(true)
@@ -181,6 +186,71 @@ export default function OutputsPage() {
     setNewComment('')
     fetchComments(selectedContent.id)
   }
+
+  const handleUpdateContent = async () => {
+  if (!editingContentId) return
+
+  const { error } = await supabase
+    .from('contents')
+    .update({
+      title: editTitle.trim(),
+      description: editDescription.trim()
+    })
+    .eq('id', editingContentId)
+
+  if (error) return console.error(error)
+
+  setEditingContentId(null)
+  fetchContents()
+}
+
+const handleDeleteContent = async (content) => {
+  const confirmDelete = confirm('Delete this output permanently?')
+  if (!confirmDelete) return
+
+  try {
+    const url = content.file_url
+    const path = url.split('/media/')[1]
+
+    // delete file
+    await supabase.storage.from('media').remove([path])
+
+    // delete record
+    const { error } = await supabase
+      .from('contents')
+      .delete()
+      .eq('id', content.id)
+
+    if (error) {
+      console.error(error)
+      return
+    }
+
+    fetchContents()
+  } catch (err) {
+    console.error(err)
+  }
+}
+
+const handleUpdateComment = async (id) => {
+  const { error } = await supabase
+    .from('comments')
+    .update({ comment_text: editCommentText })
+    .eq('id', id)
+
+  if (error) return console.error(error)
+
+  setEditingCommentId(null)
+  fetchComments(selectedContent.id)
+}
+
+const handleDeleteComment = async (id) => {
+  const confirmDelete = confirm('Delete this comment?')
+  if (!confirmDelete) return
+
+  await supabase.from('comments').delete().eq('id', id)
+  fetchComments(selectedContent.id)
+}
 
   const handleDrop = (e) => {
     e.preventDefault(); setDragOver(false)
@@ -308,7 +378,65 @@ export default function OutputsPage() {
       textAlign: 'center', padding: '1.25rem',
       borderTop: '1px solid rgba(255,255,255,0.08)',
       color: 'rgba(255,255,255,0.35)', fontSize: '12px'
-    }
+    },
+    actionRow: {
+  display: 'flex',
+  gap: '0.5rem',
+  marginTop: '0.75rem',
+  flexWrap: 'wrap'
+},
+
+editBtn: {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '0.3rem',
+  padding: '0.4rem 0.7rem',
+  borderRadius: '8px',
+  border: '1px solid rgba(99,102,241,0.3)',
+  background: 'rgba(99,102,241,0.1)',
+  color: '#6366f1',
+  fontSize: '12px',
+  fontWeight: '600',
+  cursor: 'pointer',
+  transition: 'all 0.2s'
+},
+
+deleteBtn: {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '0.3rem',
+  padding: '0.4rem 0.7rem',
+  borderRadius: '8px',
+  border: '1px solid rgba(239,68,68,0.3)',
+  background: 'rgba(239,68,68,0.1)',
+  color: '#ef4444',
+  fontSize: '12px',
+  fontWeight: '600',
+  cursor: 'pointer',
+  transition: 'all 0.2s'
+},
+
+saveBtn: {
+  padding: '0.5rem 0.9rem',
+  borderRadius: '8px',
+  border: 'none',
+  background: 'linear-gradient(135deg,#6366f1,#8b5cf6)',
+  color: 'white',
+  fontWeight: '700',
+  fontSize: '12px',
+  cursor: 'pointer'
+},
+
+cancelBtn: {
+  padding: '0.5rem 0.9rem',
+  borderRadius: '8px',
+  border: '1px solid #d1d5db',
+  background: '#f9fafb',
+  color: '#374151',
+  fontWeight: '600',
+  fontSize: '12px',
+  cursor: 'pointer'
+},
   }
 
   // ── Detail view ───────────────────────────────────────────────────────────────
@@ -393,8 +521,55 @@ export default function OutputsPage() {
                       </span>
                       <span style={{ color: '#9ca3af', fontSize: '11px' }}>{new Date(c.created_at).toLocaleDateString()}</span>
                     </div>
-                    <p style={{ margin: 0, color: '#374151', fontSize: '13px', lineHeight: '1.5' }}>{c.comment_text}</p>
+                    {editingCommentId === c.id ? (
+  <>
+    <textarea
+      value={editCommentText}
+      onChange={(e) => setEditCommentText(e.target.value)}
+      style={S.textarea}
+    />
+    <button
+  onClick={() => handleUpdateComment(c.id)}
+  style={{
+    background: '#4f46e5',
+    color: 'white',
+    border: 'none',
+    padding: '0.4rem 0.8rem',
+    borderRadius: '8px',
+    fontWeight: '600',
+    cursor: 'pointer'
+  }}
+>
+  Save
+</button>
+  </>
+) : (
+  <p style={{ color: '#1f2937', fontSize: '13px', margin: 0 }}>
+  {c.comment_text}
+</p>
+)}
+{currentUser?.id === c.user_id && (
+  <div style={S.actionRow}>
+    <button
+      style={S.editBtn}
+      onClick={() => {
+        setEditingCommentId(c.id)
+        setEditCommentText(c.comment_text)
+      }}
+    >
+      ✏️ Edit
+    </button>
+
+    <button
+      style={S.deleteBtn}
+      onClick={() => handleDeleteComment(c.id)}
+    >
+      🗑 Delete
+    </button>
+  </div>
+)}
                   </div>
+                  
                 )
               })}
             </div>
@@ -423,7 +598,7 @@ export default function OutputsPage() {
             <button style={S.backBtn} onClick={() => setSelectedContent(null)}>
               <ArrowLeftIcon /> {isMobile ? '' : 'Back'}
             </button>
-            <span style={S.headerTitle}>{selectedContent.title}</span>
+            <h3 style={S.headerTitle}>{selectedContent.title}</h3>
           </div>
           <div style={S.userBadge}>
             {isTeacher ? '👩‍🏫' : '👨‍🎓'} {currentUser?.profile?.name}
@@ -559,50 +734,269 @@ export default function OutputsPage() {
           </div>
         ) : (
           <div style={S.grid}>
-            {contents.map(content => {
-              const uploaderName = content.uploader?.name || 'Unknown'
-              const uploaderRole = content.uploader?.role || ''
-              const academicYear = content.year?.academic_year || ''
-              const yearLevel = content.year?.year_level || ''
-              return (
-                <div key={content.id} style={S.card}
-                  onClick={() => setSelectedContent(content)}
-                  onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 16px 40px rgba(0,0,0,0.25)' }}
-                  onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.15)' }}>
-                  <div style={{ aspectRatio: '16/9', background: '#1e1b4b', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                    {content.type === 'image' && <img src={content.file_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt={content.title} />}
-                    {content.type === 'video' && <div style={{ textAlign: 'center' }}><span style={{ fontSize: '2.5rem', display: 'block' }}>🎬</span><span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px' }}>Video</span></div>}
-                    {content.type === 'audio' && <div style={{ textAlign: 'center' }}><span style={{ fontSize: '2.5rem', display: 'block' }}>🎵</span><span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px' }}>Audio</span></div>}
-                    {content.type === 'file'  && <div style={{ textAlign: 'center' }}><span style={{ fontSize: '2.5rem', display: 'block' }}>📄</span><span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px' }}>Document</span></div>}
-                  </div>
-                  <div style={{ padding: isMobile ? '0.65rem' : '0.9rem' }}>
-                    <h3 style={{ margin: '0 0 0.3rem', color: '#1e1b4b', fontSize: isMobile ? '12px' : '14px', fontWeight: '700', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {content.title}
-                    </h3>
-                    {!isMobile && content.description && (
-                      <p style={{ margin: '0 0 0.4rem', color: '#6b7280', fontSize: '12px', lineHeight: '1.4', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                        {content.description}
-                      </p>
-                    )}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      <span style={{ color: '#6366f1', fontSize: '11px', fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        by {uploaderName}
-                      </span>
-                      {!isMobile && (academicYear || yearLevel) && (
-                        <span style={{ color: '#6b7280', fontSize: '11px' }}>{academicYear ? `${academicYear} · ` : ''}{yearLevel}</span>
-                      )}
-                      <span style={{ color: '#9ca3af', fontSize: '11px' }}>{new Date(content.created_at).toLocaleDateString()}</span>
-                    </div>
-                    {!isMobile && (
-                      <div style={{ marginTop: '0.6rem', padding: '0.35rem 0.6rem', background: '#f5f3ff', borderRadius: '6px', fontSize: '11px', color: '#6366f1', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
-                        💬 Click to view & comment
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+  {contents.map(content => {
+    const uploaderName = content.uploader?.name || 'Unknown'
+    const uploaderRole = content.uploader?.role || ''
+    const academicYear = content.year?.academic_year || ''
+    const yearLevel = content.year?.year_level || ''
+
+    const isEditingThis = editingContentId === content.id
+
+    return (
+      <div
+        key={content.id}
+        style={S.card}
+        onClick={() => {
+          if (!isEditingThis) setSelectedContent(content)
+        }}
+        onMouseEnter={e => {
+          e.currentTarget.style.transform = 'translateY(-5px)'
+          e.currentTarget.style.boxShadow = '0 16px 40px rgba(0,0,0,0.25)'
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.transform = 'translateY(0)'
+          e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.15)'
+        }}
+      >
+
+        {/* MEDIA */}
+        <div style={{
+          aspectRatio: '16/9',
+          background: '#1e1b4b',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          overflow: 'hidden'
+        }}>
+          {content.type === 'image' && (
+            <img
+              src={content.file_url}
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              alt={content.title}
+            />
+          )}
+
+          {content.type === 'video' && (
+            <div style={{ textAlign: 'center' }}>
+              <span style={{ fontSize: '2.5rem' }}>🎬</span>
+              <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '11px' }}>Video</span>
+            </div>
+          )}
+
+          {content.type === 'audio' && (
+            <div style={{ textAlign: 'center' }}>
+              <span style={{ fontSize: '2.5rem' }}>🎵</span>
+              <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '11px' }}>Audio</span>
+            </div>
+          )}
+
+          {content.type === 'file' && (
+            <div style={{ textAlign: 'center' }}>
+              <span style={{ fontSize: '2.5rem' }}>📄</span>
+              <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '11px' }}>Document</span>
+            </div>
+          )}
+        </div>
+
+        {/* CONTENT */}
+        <div style={{ padding: isMobile ? '0.65rem' : '0.9rem' }}>
+
+          {/* 🔥 EDIT MODE */}
+          {isEditingThis ? (
+  <>
+    {/* TITLE INPUT */}
+    <input
+      value={editTitle}
+      onChange={(e) => setEditTitle(e.target.value)}
+      onClick={(e) => e.stopPropagation()}
+      style={S.input}
+      placeholder="Edit title..."
+    />
+
+    {/* DESCRIPTION INPUT */}
+    <textarea
+      value={editDescription}
+      onChange={(e) => setEditDescription(e.target.value)}
+      onClick={(e) => e.stopPropagation()}
+      style={S.textarea}
+      placeholder="Edit description..."
+    />
+
+    {/* ACTION BUTTONS */}
+    <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.5rem' }}>
+
+      {/* SAVE */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation()
+          handleUpdateContent()
+        }}
+        style={{
+          padding: '0.35rem 0.7rem',
+          borderRadius: '8px',
+          border: 'none',
+          background: 'linear-gradient(135deg,#6366f1,#4f46e5)',
+          color: 'white',
+          fontSize: '11px',
+          fontWeight: '700',
+          cursor: 'pointer'
+        }}
+      >
+        💾 Save
+      </button>
+
+      {/* CANCEL */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation()
+          setEditingContentId(null)
+setEditTitle('')
+setEditDescription('')
+        }}
+        style={{
+          padding: '0.35rem 0.7rem',
+          borderRadius: '8px',
+          border: '1px solid rgba(0,0,0,0.15)',
+          background: 'white',
+          color: '#374151',
+          fontSize: '11px',
+          fontWeight: '600',
+          cursor: 'pointer'
+        }}
+      >
+        Cancel
+      </button>
+
+    </div>
+  </>
+) : (
+  <>
+    {/* TITLE */}
+    <h3 style={{
+      margin: '0 0 0.3rem',
+      color: '#1e1b4b',
+      fontSize: isMobile ? '12px' : '14px',
+      fontWeight: '700',
+      whiteSpace: 'nowrap',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis'
+    }}>
+      {content.title}
+    </h3>
+
+    {/* DESCRIPTION */}
+    {!isMobile && content.description && (
+      <p style={{
+        margin: '0 0 0.4rem',
+        color: '#6b7280',
+        fontSize: '12px',
+        lineHeight: '1.4',
+        display: '-webkit-box',
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: 'vertical',
+        overflow: 'hidden'
+      }}>
+        {content.description}
+      </p>
+    )}
+
+    {/* META */}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+      <span style={{
+        color: '#6366f1',
+        fontSize: '11px',
+        fontWeight: '600'
+      }}>
+        by {uploaderName}
+      </span>
+
+      {!isMobile && (academicYear || yearLevel) && (
+        <span style={{ color: '#6b7280', fontSize: '11px' }}>
+          {academicYear ? `${academicYear} · ` : ''}{yearLevel}
+        </span>
+      )}
+
+      <span style={{ color: '#9ca3af', fontSize: '11px' }}>
+        {new Date(content.created_at).toLocaleDateString()}
+      </span>
+    </div>
+
+    {/* ACTION BUTTONS */}
+    {currentUser?.id === content.user_id && (
+      <div style={{
+        display: 'flex',
+        gap: '0.4rem',
+        marginTop: '0.5rem'
+      }}>
+
+        {/* EDIT */}
+        <button
+          onClick={(e) => {
+  e.stopPropagation()
+
+  setEditingContentId(content.id)
+  setEditTitle(content.title || '')
+  setEditDescription(content.description || '')
+}}
+          style={{
+            padding: '0.35rem 0.7rem',
+            borderRadius: '8px',
+            border: 'none',
+            background: 'rgba(99,102,241,0.15)',
+            color: '#4f46e5',
+            fontSize: '11px',
+            fontWeight: '700',
+            cursor: 'pointer'
+          }}
+        >
+          ✏️ Edit
+        </button>
+
+        {/* DELETE */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            handleDeleteContent(content)
+          }}
+          style={{
+            padding: '0.35rem 0.7rem',
+            borderRadius: '8px',
+            border: 'none',
+            background: 'rgba(239,68,68,0.15)',
+            color: '#ef4444',
+            fontSize: '11px',
+            fontWeight: '700',
+            cursor: 'pointer'
+          }}
+        >
+          🗑 Delete
+        </button>
+
+      </div>
+    )}
+
+    {/* HINT */}
+    {!isMobile && (
+      <div style={{
+        marginTop: '0.5rem',
+        padding: '0.3rem 0.5rem',
+        background: '#f5f3ff',
+        borderRadius: '6px',
+        fontSize: '10px',
+        color: '#6366f1',
+        fontWeight: '600'
+      }}>
+        💬 Click to view
+      </div>
+    )}
+  </>
+)}
+
+        </div>
+      </div>
+    )
+  })}
+</div>
         )}
       </div>
 
