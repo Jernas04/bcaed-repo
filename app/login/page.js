@@ -37,7 +37,7 @@ export default function LoginPage() {
     setSuccess('')
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(formData.email, {
-        redirectTo: 'http://localhost:3000/reset-password',
+        redirectTo: 'https://bcaed-repo.vercel.app/reset-password',
       })
       if (error) {
         setError(error.message)
